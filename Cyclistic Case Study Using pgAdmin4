@@ -1,0 +1,157 @@
+--Documentation of any cleaning or manipulation of data
+--STEP 1: Creating a table named ride. 
+--Since all of our downloaded files have similar features, it will be logical to create only one table. Using this kind command, you can easily manipulate the features into correct data types. 
+
+
+CREATE TABLE IF NOT EXISTS public.bike
+(
+    ride_id character varying COLLATE pg_catalog."default" NOT NULL,
+    rideable_type character varying COLLATE pg_catalog."default",
+    started_at timestamp without time zone,
+    ended_at timestamp without time zone,
+    start_station_name character varying COLLATE pg_catalog."default",
+    start_station_id character varying COLLATE pg_catalog."default",
+    end_station_name character varying COLLATE pg_catalog."default",
+    end_station_id character varying COLLATE pg_catalog."default",
+    start_lat numeric COLLATE pg_catalog."default",
+    start_lng numeric COLLATE pg_catalog."default",
+    end_lat numeric COLLATE pg_catalog."default",
+    end_lng numeric COLLATE pg_catalog."default",
+    member_casual character varying COLLATE pg_catalog."default",
+    CONSTRAINT ride_pkey PRIMARY KEY (ride_id)
+)
+
+
+
+--STEP 2: Copying and merging data.
+--We will not use any JOIN or UNION command because we created only one table. Stacking the 12-month in the ride table created. 
+ 
+COPY bike
+--FROM '/Users/wilmalapuz/Downloads/202111_Cyclistic.csv' 
+--FROM '/Users/wilmalapuz/Downloads/202112_Cyclistic.csv' 
+--FROM '/Users/wilmalapuz/Downloads/202201_Cyclistic.csv' 
+--FROM '/Users/wilmalapuz/Downloads/202202_Cyclistic.csv' 
+--FROM '/Users/wilmalapuz/Downloads/202203_Cyclistic.csv' 
+--FROM '/Users/wilmalapuz/Downloads/202204_Cyclistic.csv' 
+--FROM '/Users/wilmalapuz/Downloads/202205_Cyclistic.csv' 
+--FROM '/Users/wilmalapuz/Downloads/202206_Cyclistic.csv' 
+--FROM '/Users/wilmalapuz/Downloads/202207_Cyclistic.csv' 
+--FROM '/Users/wilmalapuz/Downloads/202208_Cyclistic.csv' 
+--FROM '/Users/wilmalapuz/Downloads/202209_Cyclistic.csv' 
+FROM '/Users/wilmalapuz/Downloads/202210_Cyclistic.csv'
+DELIMITER ','
+CSV Header;
+
+
+--STEP 3: Data Familiarization. 
+---Schema of the table created. 
+SELECT *
+FROM information_schema.columns
+WHERE table_name = 'bike';
+
+--Checking the total rows of the table 
+SELECT COUNT(*)
+FROM bike
+
+--Getting the head of the table 
+SELECT *
+FROM bike 
+LIMIT 10
+
+
+--We need to know how many distinct observation per column 
+SELECT 
+    COUNT(DISTINCT ride_id) AS rideid
+    ,COUNT(DISTINCT rideable_type) AS ridetype 
+    ,COUNT(DISTINCT started_at) AS startat
+    ,COUNT(DISTINCT ended_at) AS endedat
+    ,COUNT(DISTINCT start_station_name) AS startstation
+    ,COUNT(DISTINCT start_station_id) AS startid
+    ,COUNT(DISTINCT end_station_name) AS endtstation
+    ,COUNT(DISTINCT end_station_id) AS endid
+    ,COUNT(DISTINCT start_lat) AS startlat
+    ,COUNT(DISTINCT start_lng) AS startlng	
+    ,COUNT(DISTINCT end_lat) AS endlat
+    ,COUNT(DISTINCT end_lng) AS endlng			    
+	,COUNT(DISTINCT member_casual) AS membercasual			
+FROM bike
+--since the count and count distinct of ride_id is the same, we will not use any delete duplicate function for this dataset. 
+
+
+--how many nulls per column 
+select 
+  sum(case when ride_id is null then 1 else 0 end) rideid
+  ,sum(case when rideable_type is null then 1 else 0 end) ridetype
+  ,sum(case when started_at is null then 1 else 0 end) startat
+  ,sum(case when ended_at is null then 1 else 0 end) endat
+  ,sum(case when start_station_name is null then 1 else 0 end) startstation
+  ,sum(case when start_station_id is null then 1 else 0 end) startid
+  ,sum(case when end_station_name is null then 1 else 0 end) endtstation
+  ,sum(case when end_station_id is null then 1 else 0 end) endid
+  ,sum(case when start_lat is null then 1 else 0 end) startlat
+  ,sum(case when start_lng is null then 1 else 0 end) startlng
+  ,sum(case when end_lat is null then 1 else 0 end) endlat
+  ,sum(case when end_lng is null then 1 else 0 end) endlng
+  ,sum(case when member_casual is null then 1 else 0 end) membercasual
+from bike
+
+
+--We will go on to the next dataset feature which is the rideable_type.
+SELECT rideable_type, COUNT(rideable_type)
+FROM bike
+GROUP BY rideable_type
+ORDER BY COUNT(rideable_type) ASC
+--there are 3 classes of types in this data; docked, classic and electric. 
+
+SELECT started_at, ended_at
+FROM bike
+ORDER BY started_at ASC
+--Data type is correct and no further manipulation needed for now. 
+
+
+
+--STEP 4: Adding/Dropping columns for data analysis. 
+--Going back to our business question, which is to analyze the bike usage of members and casual riders, we will now list all the underlying queries that we can formulate to answer the business task.
+
+What is the popular start time of the cyclers?
+What is the average cycling time?
+What is the busiest and slowest day/month? 
+What is the average distance per cycle? 
+Where is the most active station/dormant station?
+
+--By those questions above, we will need to drop the station_names and station_id column which consists of almost 1 million NULLS per column. We will add columns like starttime (extracted from started_at), cycletime (elapsed time between ended_at and started_at), month/day/year (convert the timestamp to their designated month/day/year), and distance traveled (using point command). 
+
+SELECT ride_id, rideable_type, started_at, ended_at, start_station_name AS station_name, start_lat, start_lng, end_lat, end_lng, member_casual
+    ,started_at::time AS starttime
+    ,extract
+	    (
+             epoch from ((ended_at - started_at)/60)::interval
+        )
+         as cycletime
+	,TO_CHAR(started_at, 'fmDay') AS "day"
+	,TO_CHAR(started_at, 'fmMonth') AS "month"
+    ,TO_CHAR(started_at, 'YYYY') AS "year"
+	,((point(start_lng, start_lat) <@> point(end_lng, end_lat)) * 1.609)as distance
+FROM bike 
+WHERE start_lat != end_lat AND start_lng != end_lng
+
+
+--We will not stop there, we want to clean it further by using the ORDER BY command on our newly added column. We found out that there are negative cycle times and less than 5 meters cycling distance in some recorded rides. We will exclude those using the command below:
+
+SELECT *
+from (SELECT ride_id, rideable_type, started_at, ended_at, start_station_name AS station_name, start_lat, start_lng, end_lat, end_lng, member_casual
+    ,started_at::time AS starttime
+    ,extract
+	    (
+             epoch from ((ended_at - started_at)/60)::interval
+        )
+         as cycletime
+	,TO_CHAR(started_at, 'fmDay') AS "day"
+	,TO_CHAR(started_at, 'fmMonth') AS "month"
+    ,TO_CHAR(started_at, 'YYYY') AS "year"
+	,((point(start_lng, start_lat) <@> point(end_lng, end_lat)) * 1.609)as distance
+FROM bike 
+WHERE start_lat != end_lat AND start_lng != end_lng) as Q 
+WHERE Q.cycletime >2 AND Q.distance > 0.005
+
+--On that, we only now have 5,091,767 rows for us to upload in Tableau. 
